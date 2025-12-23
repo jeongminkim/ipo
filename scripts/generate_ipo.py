@@ -1,7 +1,9 @@
-import requests
-from datetime import date, datetime, timedelta
-from pathlib import Path
+import sys
 import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import requests
 
 # ==============================
 # 설정
@@ -9,10 +11,7 @@ import time
 
 API_URL = "https://www.finuts.co.kr/html/task/ipo/ipoCalendarListQuery.php"
 
-OUTPUT_DIR = Path("calendar")
-IPO_ICS = OUTPUT_DIR / "ipo.ics"
-SPAC_ICS = OUTPUT_DIR / "spac.ics"
-
+OUTPUT_DIR = (Path(__file__).resolve().parent.parent / "calendar").resolve()
 CALENDAR_DOMAIN = "ipo-calendar.github"
 
 # ⚠️ 로컬에서 확인한 PHPSESSID (만료되면 다시 갱신 필요)
@@ -23,9 +22,9 @@ HEADERS = {
     "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7,ja;q=0.6",
     "priority": "u=0, i",
     "referer": "https://www.finuts.co.kr/html/ipo/",
-    "sec-ch-ua": "\"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
+    "sec-ch-ua": '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
     "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": "\"macOS\"",
+    "sec-ch-ua-platform": '"macOS"',
     "sec-fetch-dest": "empty",
     "sec-fetch-mode": "cors",
     "sec-fetch-site": "same-origin",
@@ -38,34 +37,21 @@ HEADERS = {
 }
 
 COOKIES = {
-    "PHPSESSID": PHPSESSID
+    "PHPSESSID": PHPSESSID,
 }
-
-# ==============================
-# 날짜 유틸
-# ==============================
-
-def target_months():
-    base = date.today().replace(day=1)
-
-    prev_month = (base - timedelta(days=1)).replace(day=1)
-    next_month = (base + timedelta(days=32)).replace(day=1)
-
-    return [
-        prev_month.strftime("%Y.%m"),
-        base.strftime("%Y.%m"),
-        next_month.strftime("%Y.%m"),
-    ]
 
 # ==============================
 # ICS 유틸
 # ==============================
 
+
 def ymd_to_ics(d: str) -> str:
     return d.replace("-", "")
 
+
 def build_uid(item):
     return f"{item['IPO_SN']}-{item['SCHDL_SE_CD']}-{item['IPO_DATE']}@{CALENDAR_DOMAIN}"
+
 
 def build_event(item):
     is_subscription = item["SCHDL_SE_CD"] == "S"
@@ -74,9 +60,7 @@ def build_event(item):
     start = item["BGNG_YMD"]
     end = item["END_YMD"]
 
-    end_plus = (
-        datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)
-    ).strftime("%Y%m%d")
+    end_plus = (datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y%m%d")
 
     desc = [
         f"구분: {category}",
@@ -89,16 +73,18 @@ def build_event(item):
 
     description = "\\n".join(desc)
 
-    return f"""BEGIN:VEVENT
-UID:{build_uid(item)}
-DTSTAMP:{datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")}
-DTSTART;VALUE=DATE:{ymd_to_ics(start)}
-DTEND;VALUE=DATE:{end_plus}
-SUMMARY:{item['ENT_NM']}
-DESCRIPTION:{description}
-CATEGORIES:{category}
-END:VEVENT
-"""
+    return (
+        "BEGIN:VEVENT\n"
+        f"UID:{build_uid(item)}\n"
+        f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}\n"
+        f"DTSTART;VALUE=DATE:{ymd_to_ics(start)}\n"
+        f"DTEND;VALUE=DATE:{end_plus}\n"
+        f"SUMMARY:{item['ENT_NM']}\n"
+        f"DESCRIPTION:{description}\n"
+        f"CATEGORIES:{category}\n"
+        "END:VEVENT\n"
+    )
+
 
 def build_calendar(events):
     return (
@@ -106,13 +92,15 @@ def build_calendar(events):
         "VERSION:2.0\n"
         "PRODID:-//IPO Calendar KR//EN\n"
         "CALSCALE:GREGORIAN\n"
-        + "".join(events) +
-        "END:VCALENDAR\n"
+        + "".join(events)
+        + "END:VCALENDAR\n"
     )
+
 
 # ==============================
 # API 호출
 # ==============================
+
 
 def fetch_calendar(month: str, session: requests.Session):
     params = {
@@ -121,46 +109,75 @@ def fetch_calendar(month: str, session: requests.Session):
         "_": int(time.time() * 1000),
     }
 
-    resp = session.get(
-        API_URL,
-        params=params,
-        headers=HEADERS,
-        cookies=COOKIES,
-        timeout=15,
-    )
+    resp = session.get(API_URL, params=params, headers=HEADERS, cookies=COOKIES, timeout=15)
     resp.raise_for_status()
 
     return resp.json().get("data", [])
+
+
+# ==============================
+# 입력/검증
+# ==============================
+
+
+def parse_month_input(raw: str):
+    try:
+        dt = datetime.strptime(raw, "%Y%m")
+    except ValueError:
+        raise ValueError("입력은 yyyymm 형식이어야 합니다.")
+
+    return dt.strftime("%Y.%m")
+
+
+def ask_month():
+    raw = input("생성할 공모주 캘린더 대상 연월을 입력하세요 (yyyymm): ").strip()
+
+    if not raw:
+        print("⚠️ 입력이 비어 있습니다. yyyymm 형식으로 다시 실행해주세요.")
+        sys.exit(1)
+
+    try:
+        return parse_month_input(raw)
+    except ValueError as e:
+        print(f"⚠️ {e}")
+        sys.exit(1)
+
 
 # ==============================
 # 메인
 # ==============================
 
+
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    month_for_api = ask_month()
+
+    session = requests.Session()
+
+    print(f"{month_for_api} 데이터 수집 중...")
+    items = fetch_calendar(month_for_api, session)
 
     ipo_events = []
     spac_events = []
 
-    session = requests.Session()
+    for item in items:
+        event = build_event(item)
 
-    for month in target_months():
-        print(f"Fetching {month}...")
-        items = fetch_calendar(month, session)
+        if item.get("SE_CD") == "IPO":
+            ipo_events.append(event)
+        elif item.get("SE_CD") == "SPAC":
+            spac_events.append(event)
 
-        for item in items:
-            event = build_event(item)
+    ipo_path = OUTPUT_DIR / "ipo.ics"
+    spac_path = OUTPUT_DIR / "spac.ics"
 
-            if item["SE_CD"] == "IPO":
-                ipo_events.append(event)
-            elif item["SE_CD"] == "SPAC":
-                spac_events.append(event)
+    ipo_path.write_text(build_calendar(ipo_events), encoding="utf-8")
+    spac_path.write_text(build_calendar(spac_events), encoding="utf-8")
 
-    IPO_ICS.write_text(build_calendar(ipo_events), encoding="utf-8")
-    SPAC_ICS.write_text(build_calendar(spac_events), encoding="utf-8")
+    print(f"✔ 생성 완료: {ipo_path}")
+    print(f"✔ 생성 완료: {spac_path}")
 
-    print(f"✔ Generated {IPO_ICS}")
-    print(f"✔ Generated {SPAC_ICS}")
 
 if __name__ == "__main__":
     main()
