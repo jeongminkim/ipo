@@ -113,13 +113,15 @@ def build_event(item):
     # 실제 개행을 사용하고 나중에 ics_escape에서 \n 처리
     description = "\n".join(desc)
 
+    summary = f"[{category}] {item['ENT_NM']}"
+
     lines = [
         "BEGIN:VEVENT",
         fmt_line("UID", ics_escape(build_uid(item))),
         fmt_line("DTSTAMP", datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")),
         fmt_line("DTSTART;VALUE=DATE", ymd_to_ics(start)),
         fmt_line("DTEND;VALUE=DATE", end_plus),
-        fmt_line("SUMMARY", ics_escape(item["ENT_NM"])),
+        fmt_line("SUMMARY", ics_escape(summary)),
         fmt_line("DESCRIPTION", ics_escape(description)),
         fmt_line("CATEGORIES", ics_escape(category)),
         "END:VEVENT",
