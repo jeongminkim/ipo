@@ -91,6 +91,45 @@ def fmt_line(key: str, value: str) -> str:
 def build_uid(item):
     return f"{item['IPO_SN']}-{item['SCHDL_SE_CD']}-{item['IPO_DATE']}@{CALENDAR_DOMAIN}"
 
+def unfold_lines(lines):
+    unfolded = []
+    for line in lines:
+        if line.startswith(" ") and unfolded:
+            unfolded[-1] += line[1:]
+        else:
+            unfolded.append(line)
+    return unfolded
+
+
+def extract_uid(lines):
+    for line in lines:
+        upper = line.upper()
+        if upper.startswith("UID:") or upper.startswith("UID;"):
+            return line.split(":", 1)[1]
+    return None
+
+
+def load_existing_events(path: Path):
+    if not path.exists():
+        return {}
+
+    events = {}
+    lines = path.read_text(encoding="utf-8").splitlines()
+    current = []
+
+    for line in lines:
+        if line == "BEGIN:VEVENT":
+            current = [line]
+        elif current:
+            current.append(line)
+            if line == "END:VEVENT":
+                uid = extract_uid(unfold_lines(current))
+                if uid:
+                    events[uid] = "\r\n".join(current)
+                current = []
+
+    return events
+
 
 def build_event(item):
     is_subscription = item["SCHDL_SE_CD"] == "S"
@@ -140,7 +179,9 @@ def build_calendar(events):
         fmt_line("X-WR-TIMEZONE", "UTC"),
     ]
 
-    lines.extend(events)
+    for event in events:
+        lines.extend(event.splitlines())
+
     lines.append("END:VCALENDAR")
 
     return "\r\n".join(lines) + "\r\n"
@@ -207,22 +248,31 @@ def main():
     print(f"{month_for_api} 데이터 수집 중...")
     items = fetch_calendar(month_for_api, session)
 
-    ipo_events = []
-    spac_events = []
+    ipo_events_new = {}
+    spac_events_new = {}
 
     for item in items:
         event = build_event(item)
 
         if item.get("SE_CD") == "IPO":
-            ipo_events.append(event)
+            ipo_events_new[build_uid(item)] = event
         elif item.get("SE_CD") == "SPAC":
-            spac_events.append(event)
+            spac_events_new[build_uid(item)] = event
 
     ipo_path = OUTPUT_DIR / "ipo.ics"
     spac_path = OUTPUT_DIR / "spac.ics"
 
-    ipo_path.write_text(build_calendar(ipo_events), encoding="utf-8")
-    spac_path.write_text(build_calendar(spac_events), encoding="utf-8")
+    ipo_existing = load_existing_events(ipo_path)
+    spac_existing = load_existing_events(spac_path)
+
+    ipo_merged = {**ipo_existing}
+    ipo_merged.update(ipo_events_new)
+
+    spac_merged = {**spac_existing}
+    spac_merged.update(spac_events_new)
+
+    ipo_path.write_text(build_calendar(ipo_merged.values()), encoding="utf-8")
+    spac_path.write_text(build_calendar(spac_merged.values()), encoding="utf-8")
 
     print(f"✔ 생성 완료: {ipo_path}")
     print(f"✔ 생성 완료: {spac_path}")
