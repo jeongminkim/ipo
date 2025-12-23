@@ -12,7 +12,9 @@
    ```bash
    uv run --with requests scripts/generate_ipo.py
    ```
-2. 프롬프트에 생성할 연월을 `yyyymm` 형식으로 입력 (예: `202501`).
+2. 프롬프트에 생성할 연월을 입력:
+   - 단일: `yyyymm` (예: `202501`)
+   - 여러 달: `yyyymm,yyyymm,yyyymm` 처럼 콤마로 구분 (예: `202501,202502`)
 3. 실행 후 프로젝트 루트(`docs/`)에 `ipo.ics`, `spac.ics` 파일이 갱신됩니다.
    - 기존 일정은 UID 기준으로 유지·갱신되고, 새 일정은 추가됩니다(이전 월 데이터가 지워지지 않음).
 

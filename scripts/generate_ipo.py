@@ -91,6 +91,57 @@ def fmt_line(key: str, value: str) -> str:
 def build_uid(item):
     return f"{item['IPO_SN']}-{item['SCHDL_SE_CD']}-{item['IPO_DATE']}@{CALENDAR_DOMAIN}"
 
+
+def has_value(v) -> bool:
+    if v is None:
+        return False
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return False
+        lowered = s.lower()
+        if lowered in {"none", "null", "-"}:
+            return False
+        try:
+            num = float(s.replace(",", ""))
+        except ValueError:
+            return True
+        return num != 0
+    try:
+        return float(v) != 0
+    except Exception:
+        return bool(v)
+
+
+def clean_description_text(desc_text: str) -> str:
+    # desc_text has literal \n, not real newline
+    raw_lines = desc_text.replace("\\n", "\n").split("\n")
+    cleaned = []
+
+    for line in raw_lines:
+        if ":" not in line:
+            continue
+        label, value = line.split(":", 1)
+        label = label.strip()
+        value = value.strip()
+
+        if label == "구분":
+            cleaned.append(f"{label}: {value}")
+            continue
+
+        # strip common unit suffix for numeric check
+        numeric_value = (
+            value.replace("원", "")
+            .replace("%", "")
+            .replace(",", "")
+            .strip()
+        )
+
+        if has_value(numeric_value):
+            cleaned.append(f"{label}: {value}")
+
+    return "\\n".join(cleaned)
+
 def unfold_lines(lines):
     unfolded = []
     for line in lines:
@@ -123,9 +174,17 @@ def load_existing_events(path: Path):
         elif current:
             current.append(line)
             if line == "END:VEVENT":
-                uid = extract_uid(unfold_lines(current))
+                unfolded = unfold_lines(current)
+                uid = extract_uid(unfolded)
                 if uid:
-                    events[uid] = "\r\n".join(current)
+                    for idx, l in enumerate(unfolded):
+                        upper = l.upper()
+                        if upper.startswith("DESCRIPTION:") or upper.startswith("DESCRIPTION;"):
+                            key = l.split(":", 1)[0]
+                            cleaned = clean_description_text(l.split(":", 1)[1])
+                            unfolded[idx] = fmt_line(key, ics_escape(cleaned))
+                            break
+                    events[uid] = "\r\n".join(unfolded)
                 current = []
 
     return events
@@ -140,14 +199,18 @@ def build_event(item):
 
     end_plus = (datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y%m%d")
 
-    desc = [
-        f"구분: {category}",
-        f"공모가: {item['PSS_PRC']}원",
-        f"기관 경쟁률: {item['INST_CMPET_RT']}",
-        f"의무보유확약률: {item['DUTY_HOLD_DFPR_RT']}%",
-        f"일반청약 경쟁률: {item['SCSCS_CMPET_RT']}",
-        f"주관사: {item['INDCT_JUGANSA_NM']}",
-    ]
+    desc = [f"구분: {category}"]
+
+    if has_value(item.get("PSS_PRC")):
+        desc.append(f"공모가: {item['PSS_PRC']}원")
+    if has_value(item.get("INST_CMPET_RT")):
+        desc.append(f"기관 경쟁률: {item['INST_CMPET_RT']}")
+    if has_value(item.get("DUTY_HOLD_DFPR_RT")):
+        desc.append(f"의무보유확약률: {item['DUTY_HOLD_DFPR_RT']}%")
+    if has_value(item.get("SCSCS_CMPET_RT")):
+        desc.append(f"일반청약 경쟁률: {item['SCSCS_CMPET_RT']}")
+    if has_value(item.get("INDCT_JUGANSA_NM")):
+        desc.append(f"주관사: {item['INDCT_JUGANSA_NM']}")
 
     # 실제 개행을 사용하고 나중에 ics_escape에서 \n 처리
     description = "\n".join(desc)
@@ -169,13 +232,13 @@ def build_event(item):
     return "\r\n".join(lines)
 
 
-def build_calendar(events):
+def build_calendar(events, cal_name: str):
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
         "PRODID:-//IPO Calendar KR//EN",
         "CALSCALE:GREGORIAN",
-        fmt_line("X-WR-CALNAME", "IPO Calendar"),
+        fmt_line("X-WR-CALNAME", cal_name),
         fmt_line("X-WR-TIMEZONE", "UTC"),
     ]
 
@@ -210,24 +273,29 @@ def fetch_calendar(month: str, session: requests.Session):
 # ==============================
 
 
-def parse_month_input(raw: str):
+def parse_month_inputs(raw: str):
+    months = []
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            dt = datetime.strptime(token, "%Y%m")
+        except ValueError:
+            raise ValueError("입력은 yyyymm 또는 콤마로 구분된 yyyymm,yyyymm 형식이어야 합니다.")
+        months.append(dt.strftime("%Y.%m"))
+
+    if not months:
+        raise ValueError("입력이 비어 있습니다.")
+
+    return months
+
+
+def ask_months():
+    raw = input("생성할 공모주 캘린더 대상 연월을 입력하세요 (yyyymm[,yyyymm...]): ").strip()
+
     try:
-        dt = datetime.strptime(raw, "%Y%m")
-    except ValueError:
-        raise ValueError("입력은 yyyymm 형식이어야 합니다.")
-
-    return dt.strftime("%Y.%m")
-
-
-def ask_month():
-    raw = input("생성할 공모주 캘린더 대상 연월을 입력하세요 (yyyymm): ").strip()
-
-    if not raw:
-        print("⚠️ 입력이 비어 있습니다. yyyymm 형식으로 다시 실행해주세요.")
-        sys.exit(1)
-
-    try:
-        return parse_month_input(raw)
+        return parse_month_inputs(raw)
     except ValueError as e:
         print(f"⚠️ {e}")
         sys.exit(1)
@@ -241,23 +309,24 @@ def ask_month():
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    month_for_api = ask_month()
+    months_for_api = ask_months()
 
     session = requests.Session()
-
-    print(f"{month_for_api} 데이터 수집 중...")
-    items = fetch_calendar(month_for_api, session)
 
     ipo_events_new = {}
     spac_events_new = {}
 
-    for item in items:
-        event = build_event(item)
+    for month_for_api in months_for_api:
+        print(f"{month_for_api} 데이터 수집 중...")
+        items = fetch_calendar(month_for_api, session)
 
-        if item.get("SE_CD") == "IPO":
-            ipo_events_new[build_uid(item)] = event
-        elif item.get("SE_CD") == "SPAC":
-            spac_events_new[build_uid(item)] = event
+        for item in items:
+            event = build_event(item)
+
+            if item.get("SE_CD") == "IPO":
+                ipo_events_new[build_uid(item)] = event
+            elif item.get("SE_CD") == "SPAC":
+                spac_events_new[build_uid(item)] = event
 
     ipo_path = OUTPUT_DIR / "ipo.ics"
     spac_path = OUTPUT_DIR / "spac.ics"
@@ -271,8 +340,8 @@ def main():
     spac_merged = {**spac_existing}
     spac_merged.update(spac_events_new)
 
-    ipo_path.write_text(build_calendar(ipo_merged.values()), encoding="utf-8")
-    spac_path.write_text(build_calendar(spac_merged.values()), encoding="utf-8")
+    ipo_path.write_text(build_calendar(ipo_merged.values(), "일반기업 공모주 달력"), encoding="utf-8")
+    spac_path.write_text(build_calendar(spac_merged.values(), "스팩 공모주 달력"), encoding="utf-8")
 
     print(f"✔ 생성 완료: {ipo_path}")
     print(f"✔ 생성 완료: {spac_path}")
