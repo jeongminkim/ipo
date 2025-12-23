@@ -69,13 +69,15 @@ def build_event(item):
         f"주관사: {item['INDCT_JUGANSA_NM']}",
     ]
 
+    description = "\\n".join(desc)
+
     return f"""BEGIN:VEVENT
 UID:{build_uid(item)}
 DTSTAMP:{datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")}
 DTSTART;VALUE=DATE:{ymd_to_ics(start)}
 DTEND;VALUE=DATE:{end_plus}
 SUMMARY:{item['ENT_NM']}
-DESCRIPTION:{'\\n'.join(desc)}
+DESCRIPTION:{description}
 CATEGORIES:{category}
 END:VEVENT
 """
