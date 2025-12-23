@@ -15,11 +15,30 @@ SPAC_ICS = OUTPUT_DIR / "spac.ics"
 
 CALENDAR_DOMAIN = "ipo-calendar.github"
 
+# ⚠️ 로컬에서 확인한 PHPSESSID (만료되면 다시 갱신 필요)
+PHPSESSID = "m9lgq2lor5h69ccfqf62glb855"
+
 HEADERS = {
     "accept": "*/*",
-    "x-requested-with": "XMLHttpRequest",
+    "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7,ja;q=0.6",
+    "priority": "u=0, i",
     "referer": "https://www.finuts.co.kr/html/ipo/",
-    "user-agent": "Mozilla/5.0 (GitHub Actions)"
+    "sec-ch-ua": "\"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"macOS\"",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+    "user-agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/143.0.0.0 Safari/537.36"
+    ),
+    "x-requested-with": "XMLHttpRequest",
+}
+
+COOKIES = {
+    "PHPSESSID": PHPSESSID
 }
 
 # ==============================
@@ -27,7 +46,6 @@ HEADERS = {
 # ==============================
 
 def target_months():
-    """지난달 / 이번달 / 다음달 yyyy.mm"""
     base = date.today().replace(day=1)
 
     prev_month = (base - timedelta(days=1)).replace(day=1)
@@ -96,14 +114,20 @@ def build_calendar(events):
 # API 호출
 # ==============================
 
-def fetch_calendar(month: str):
+def fetch_calendar(month: str, session: requests.Session):
     params = {
         "calendarDate": month,
         "checkedValue[]": ["chk2", "chk4"],
-        "_": int(time.time() * 1000)
+        "_": int(time.time() * 1000),
     }
 
-    resp = requests.get(API_URL, params=params, headers=HEADERS, timeout=15)
+    resp = session.get(
+        API_URL,
+        params=params,
+        headers=HEADERS,
+        cookies=COOKIES,
+        timeout=15,
+    )
     resp.raise_for_status()
 
     return resp.json().get("data", [])
@@ -118,9 +142,11 @@ def main():
     ipo_events = []
     spac_events = []
 
+    session = requests.Session()
+
     for month in target_months():
         print(f"Fetching {month}...")
-        items = fetch_calendar(month)
+        items = fetch_calendar(month, session)
 
         for item in items:
             event = build_event(item)
