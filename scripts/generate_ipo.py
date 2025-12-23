@@ -49,6 +49,16 @@ def ymd_to_ics(d: str) -> str:
     return d.replace("-", "")
 
 
+def ics_escape(text: str) -> str:
+    # RFC5545 escaping
+    return (
+        text.replace("\\", "\\\\")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+        .replace("\n", "\\n")
+    )
+
+
 def build_uid(item):
     return f"{item['IPO_SN']}-{item['SCHDL_SE_CD']}-{item['IPO_DATE']}@{CALENDAR_DOMAIN}"
 
@@ -74,26 +84,28 @@ def build_event(item):
     description = "\\n".join(desc)
 
     return (
-        "BEGIN:VEVENT\n"
-        f"UID:{build_uid(item)}\n"
-        f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}\n"
-        f"DTSTART;VALUE=DATE:{ymd_to_ics(start)}\n"
-        f"DTEND;VALUE=DATE:{end_plus}\n"
-        f"SUMMARY:{item['ENT_NM']}\n"
-        f"DESCRIPTION:{description}\n"
-        f"CATEGORIES:{category}\n"
-        "END:VEVENT\n"
+        "BEGIN:VEVENT\r\n"
+        f"UID:{ics_escape(build_uid(item))}\r\n"
+        f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}\r\n"
+        f"DTSTART;VALUE=DATE:{ymd_to_ics(start)}\r\n"
+        f"DTEND;VALUE=DATE:{end_plus}\r\n"
+        f"SUMMARY:{ics_escape(item['ENT_NM'])}\r\n"
+        f"DESCRIPTION:{ics_escape(description)}\r\n"
+        f"CATEGORIES:{ics_escape(category)}\r\n"
+        "END:VEVENT\r\n"
     )
 
 
 def build_calendar(events):
     return (
-        "BEGIN:VCALENDAR\n"
-        "VERSION:2.0\n"
-        "PRODID:-//IPO Calendar KR//EN\n"
-        "CALSCALE:GREGORIAN\n"
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//IPO Calendar KR//EN\r\n"
+        "CALSCALE:GREGORIAN\r\n"
+        "X-WR-CALNAME:IPO Calendar\r\n"
+        "X-WR-TIMEZONE:UTC\r\n"
         + "".join(events)
-        + "END:VCALENDAR\n"
+        + "END:VCALENDAR\r\n"
     )
 
 
