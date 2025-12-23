@@ -60,16 +60,27 @@ def ics_escape(text: str) -> str:
 
 
 def fold_line(line: str, limit: int = 75) -> str:
-    # RFC5545 line folding (CRLF + space)
-    if len(line) <= limit:
+    # RFC5545 line folding (CRLF + space), count by octet length
+    if len(line.encode("utf-8")) <= limit:
         return line
 
     parts = []
-    while len(line) > limit:
-        parts.append(line[:limit])
-        line = line[limit:]
-        line = " " + line
-    parts.append(line)
+    current = ""
+    current_len = 0
+
+    for ch in line:
+        ch_len = len(ch.encode("utf-8"))
+        if current_len + ch_len > limit:
+            parts.append(current)
+            current = " " + ch
+            current_len = 1 + ch_len  # leading space counts in length
+        else:
+            current += ch
+            current_len += ch_len
+
+    if current:
+        parts.append(current)
+
     return "\r\n".join(parts)
 
 
@@ -99,7 +110,8 @@ def build_event(item):
         f"주관사: {item['INDCT_JUGANSA_NM']}",
     ]
 
-    description = "\\n".join(desc)
+    # 실제 개행을 사용하고 나중에 ics_escape에서 \n 처리
+    description = "\n".join(desc)
 
     lines = [
         "BEGIN:VEVENT",
