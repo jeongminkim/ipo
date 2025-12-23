@@ -1,6 +1,6 @@
 # IPO 캘린더 생성 스크립트
 
-공모주/스팩 캘린더를 로컬에서 생성해 `calendar/ipo.ics`, `calendar/spac.ics`로 저장하는 방법을 안내합니다.
+공모주/스팩 캘린더를 로컬에서 생성해 `docs/ipo.ics`, `docs/spac.ics`로 저장하는 방법을 안내합니다.
 
 ## 준비물
 - Python 3.9+ (uv가 이를 사용)
@@ -13,7 +13,7 @@
    uv run --with requests scripts/generate_ipo.py
    ```
 2. 프롬프트에 생성할 연월을 `yyyymm` 형식으로 입력 (예: `202501`).
-3. 실행 후 프로젝트 루트(`calendar/`)에 `ipo.ics`, `spac.ics` 파일이 갱신됩니다.
+3. 실행 후 프로젝트 루트(`docs/`)에 `ipo.ics`, `spac.ics` 파일이 갱신됩니다.
 
 ## 참고
 - 파일명에는 연월을 포함하지 않고 매 실행 시 덮어씁니다.

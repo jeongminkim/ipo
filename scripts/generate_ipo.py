@@ -11,7 +11,7 @@ import requests
 
 API_URL = "https://www.finuts.co.kr/html/task/ipo/ipoCalendarListQuery.php"
 
-OUTPUT_DIR = (Path(__file__).resolve().parent.parent / "calendar").resolve()
+OUTPUT_DIR = (Path(__file__).resolve().parent.parent / "docs").resolve()
 CALENDAR_DOMAIN = "ipo-calendar.github"
 
 # ⚠️ 로컬에서 확인한 PHPSESSID (만료되면 다시 갱신 필요)
