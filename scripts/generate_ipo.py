@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -189,6 +190,38 @@ def load_existing_events(path: Path):
     return events
 
 
+def format_date_range(start: str, end: str) -> str:
+    return start if start == end else f"{start}~{end}"
+
+
+def build_summary(item) -> str:
+    category = "청약" if item["SCHDL_SE_CD"] == "S" else "상장"
+    return f"[{category}] {item['ENT_NM']}"
+
+
+def build_new_events_message(items, title: str) -> str:
+    lines = [f"{title} 신규 일정"]
+
+    for item in items:
+        start = item["BGNG_YMD"]
+        end = item["END_YMD"]
+        lines.append(f"- {format_date_range(start, end)} {build_summary(item)}")
+
+    return "\n".join(lines)
+
+
+def send_telegram_message(token: str, chat_id: str, text: str):
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "disable_web_page_preview": True,
+    }
+
+    resp = requests.post(url, data=payload, timeout=15)
+    resp.raise_for_status()
+
+
 def build_event(item):
     is_subscription = item["SCHDL_SE_CD"] == "S"
     category = "청약" if is_subscription else "상장"
@@ -214,7 +247,7 @@ def build_event(item):
     # 실제 개행을 사용하고 나중에 ics_escape에서 \n 처리
     description = "\n".join(desc)
 
-    summary = f"[{category}] {item['ENT_NM']}"
+    summary = build_summary(item)
 
     lines = [
         "BEGIN:VEVENT",
@@ -295,26 +328,33 @@ def main():
 
     session = requests.Session()
 
+    ipo_path = OUTPUT_DIR / "ipo.ics"
+    spac_path = OUTPUT_DIR / "spac.ics"
+
+    ipo_existing = load_existing_events(ipo_path)
+    spac_existing = load_existing_events(spac_path)
+
     ipo_events_new = {}
     spac_events_new = {}
+    new_ipo_items = []
+    new_spac_items = []
 
     for month_for_api in target_months():
         print(f"{month_for_api} 데이터 수집 중...")
         items = fetch_calendar(month_for_api, session)
 
         for item in items:
+            uid = build_uid(item)
             event = build_event(item)
 
             if item.get("SE_CD") == "IPO":
-                ipo_events_new[build_uid(item)] = event
+                ipo_events_new[uid] = event
+                if uid not in ipo_existing:
+                    new_ipo_items.append(item)
             elif item.get("SE_CD") == "SPAC":
-                spac_events_new[build_uid(item)] = event
-
-    ipo_path = OUTPUT_DIR / "ipo.ics"
-    spac_path = OUTPUT_DIR / "spac.ics"
-
-    ipo_existing = load_existing_events(ipo_path)
-    spac_existing = load_existing_events(spac_path)
+                spac_events_new[uid] = event
+                if uid not in spac_existing:
+                    new_spac_items.append(item)
 
     ipo_merged = {**ipo_existing}
     ipo_merged.update(ipo_events_new)
@@ -327,6 +367,22 @@ def main():
 
     print(f"✔ 생성 완료: {ipo_path}")
     print(f"✔ 생성 완료: {spac_path}")
+
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
+    if token and chat_id:
+        parts = []
+        if new_ipo_items:
+            parts.append(build_new_events_message(new_ipo_items, "일반기업 공모주 달력"))
+        if new_spac_items:
+            parts.append(build_new_events_message(new_spac_items, "스팩 공모주 달력"))
+        if parts:
+            try:
+                send_telegram_message(token, chat_id, "\n\n".join(parts))
+                print("✔ 텔레그램 알림 전송 완료")
+            except requests.RequestException as e:
+                print(f"⚠️ 텔레그램 알림 실패: {e}")
 
 
 if __name__ == "__main__":

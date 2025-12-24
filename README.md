@@ -23,3 +23,6 @@
 ## 참고
 - 파일명에는 연월을 포함하지 않고 매 실행 시 덮어씁니다.
 - ICS를 캘린더 앱에서 URL 구독하면 일정이 자동 반영됩니다. GitHub Pages 배포 URL 예시: `https://jeongminkim.github.io/ipo/ipo.ics`, `https://jeongminkim.github.io/ipo/spac.ics`
+- 신규 일정만 텔레그램으로 알림을 받고 싶다면 아래 환경 변수를 설정하세요:
+  - `TELEGRAM_BOT_TOKEN`
+  - `TELEGRAM_CHAT_ID`
