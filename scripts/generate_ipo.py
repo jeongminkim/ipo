@@ -1,6 +1,5 @@
-import sys
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -269,36 +268,21 @@ def fetch_calendar(month: str, session: requests.Session):
 
 
 # ==============================
-# 입력/검증
+# 기간
 # ==============================
 
 
-def parse_month_inputs(raw: str):
-    months = []
-    for part in raw.split(","):
-        token = part.strip()
-        if not token:
-            continue
-        try:
-            dt = datetime.strptime(token, "%Y%m")
-        except ValueError:
-            raise ValueError("입력은 yyyymm 또는 콤마로 구분된 yyyymm,yyyymm 형식이어야 합니다.")
-        months.append(dt.strftime("%Y.%m"))
+def target_months():
+    base = date.today().replace(day=1)
 
-    if not months:
-        raise ValueError("입력이 비어 있습니다.")
+    prev_month = (base - timedelta(days=1)).replace(day=1)
+    next_month = (base + timedelta(days=32)).replace(day=1)
 
-    return months
-
-
-def ask_months():
-    raw = input("생성할 공모주 캘린더 대상 연월을 입력하세요 (yyyymm[,yyyymm...]): ").strip()
-
-    try:
-        return parse_month_inputs(raw)
-    except ValueError as e:
-        print(f"⚠️ {e}")
-        sys.exit(1)
+    return [
+        prev_month.strftime("%Y.%m"),
+        base.strftime("%Y.%m"),
+        next_month.strftime("%Y.%m"),
+    ]
 
 
 # ==============================
@@ -309,14 +293,12 @@ def ask_months():
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    months_for_api = ask_months()
-
     session = requests.Session()
 
     ipo_events_new = {}
     spac_events_new = {}
 
-    for month_for_api in months_for_api:
+    for month_for_api in target_months():
         print(f"{month_for_api} 데이터 수집 중...")
         items = fetch_calendar(month_for_api, session)
 
