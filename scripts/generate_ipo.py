@@ -140,7 +140,7 @@ def clean_description_text(desc_text: str) -> str:
         if has_value(numeric_value):
             cleaned.append(f"{label}: {value}")
 
-    return "\\n".join(cleaned)
+    return "\n".join(cleaned)
 
 def unfold_lines(lines):
     unfolded = []
