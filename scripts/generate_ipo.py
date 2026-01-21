@@ -196,6 +196,12 @@ def format_date_range(start: str, end: str) -> str:
 
 def build_summary(item) -> str:
     category = "청약" if item["SCHDL_SE_CD"] == "S" else "상장"
+    
+    # 청약인 경우 주관사 정보를 포함
+    if category == "청약" and has_value(item.get("INDCT_JUGANSA_NM")):
+        jugansa = item["INDCT_JUGANSA_NM"].strip()
+        return f"[{category}/{jugansa}] {item['ENT_NM']}"
+    
     return f"[{category}] {item['ENT_NM']}"
 
 
