@@ -59,6 +59,25 @@ def ics_escape(text: str) -> str:
     )
 
 
+def ics_unescape(text: str) -> str:
+    # RFC5545 unescaping
+    # we might have multiple levels of escaping due to the bug
+    # loop until no more changes to handle "compounded" escaping
+    current = text
+    while True:
+        next_val = (
+            current.replace("\\n", "\n")
+            .replace("\\N", "\n")
+            .replace("\\,", ",")
+            .replace("\\;", ";")
+            .replace("\\\\", "\\")
+        )
+        if next_val == current:
+            break
+        current = next_val
+    return current
+
+
 def fold_line(line: str, limit: int = 75) -> str:
     # RFC5545 line folding (CRLF + space), count by octet length
     if len(line.encode("utf-8")) <= limit:
@@ -114,8 +133,9 @@ def has_value(v) -> bool:
 
 
 def clean_description_text(desc_text: str) -> str:
-    # desc_text has literal \n, not real newline
-    raw_lines = desc_text.replace("\\n", "\n").split("\n")
+    # desc_text is the literal string from the ICS file (potentially escaped)
+    unescaped = ics_unescape(desc_text)
+    raw_lines = unescaped.split("\n")
     cleaned = []
 
     for line in raw_lines:
