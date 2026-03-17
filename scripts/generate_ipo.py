@@ -111,6 +111,35 @@ def build_uid(item):
     return f"{item['IPO_SN']}-{item['SCHDL_SE_CD']}-{item['IPO_DATE']}@{CALENDAR_DOMAIN}"
 
 
+def parse_uid(uid: str):
+    """
+    UID format (we generate):
+      {IPO_SN}-{SCHDL_SE_CD}-{IPO_DATE}@{domain}
+    Returns (ipo_sn, schdl_se_cd, ipo_date) or None if not parseable.
+    """
+    if not uid:
+        return None
+    left = uid.split("@", 1)[0]
+    parts = left.split("-", 2)
+    if len(parts) != 3:
+        return None
+    ipo_sn, schdl_se_cd, ipo_date = parts
+    if not ipo_sn or not schdl_se_cd or not ipo_date:
+        return None
+    return ipo_sn, schdl_se_cd, ipo_date
+
+
+def uid_month(uid: str):
+    parsed = parse_uid(uid)
+    if not parsed:
+        return None
+    _, _, ipo_date = parsed
+    try:
+        return datetime.strptime(ipo_date, "%Y-%m-%d").strftime("%Y.%m")
+    except ValueError:
+        return None
+
+
 def has_value(v) -> bool:
     if v is None:
         return False
@@ -365,6 +394,33 @@ def main():
     new_ipo_items = []
     new_spac_items = []
 
+    target_month_set = set(target_months())
+    ipo_new_keys = set()
+    spac_new_keys = set()
+
+    def event_key_from_item(item):
+        # Stable key for "same company + same schedule type" regardless of IPO_DATE changes.
+        # (IPO / SPAC is already separated into different output files.)
+        return str(item.get("IPO_SN", "")).strip(), str(item.get("SCHDL_SE_CD", "")).strip()
+
+    def event_key_from_uid(uid: str):
+        parsed = parse_uid(uid)
+        if not parsed:
+            return None
+        ipo_sn, schdl_se_cd, _ = parsed
+        return ipo_sn, schdl_se_cd
+
+    def drop_existing_by_key(existing_events: dict, key):
+        # Remove any old UIDs matching the same (IPO_SN, SCHDL_SE_CD) key.
+        if not key or not key[0] or not key[1]:
+            return
+        to_delete = []
+        for existing_uid in existing_events.keys():
+            if event_key_from_uid(existing_uid) == key:
+                to_delete.append(existing_uid)
+        for existing_uid in to_delete:
+            existing_events.pop(existing_uid, None)
+
     for month_for_api in target_months():
         print(f"{month_for_api} 데이터 수집 중...")
         items = fetch_calendar(month_for_api, session)
@@ -374,13 +430,36 @@ def main():
             event = build_event(item)
 
             if item.get("SE_CD") == "IPO":
+                key = event_key_from_item(item)
+                ipo_new_keys.add(key)
+                # If UID changed due to schedule changes, drop old event(s) first.
+                drop_existing_by_key(ipo_existing, key)
                 ipo_events_new[uid] = event
                 if uid not in ipo_existing:
                     new_ipo_items.append(item)
             elif item.get("SE_CD") == "SPAC":
+                key = event_key_from_item(item)
+                spac_new_keys.add(key)
+                drop_existing_by_key(spac_existing, key)
                 spac_events_new[uid] = event
                 if uid not in spac_existing:
                     new_spac_items.append(item)
+
+    # Prune cancelled/missing events within the fetched month window.
+    def prune_cancelled(existing_events: dict, new_keys: set):
+        to_delete = []
+        for existing_uid in existing_events.keys():
+            m = uid_month(existing_uid)
+            if m not in target_month_set:
+                continue
+            key = event_key_from_uid(existing_uid)
+            if key and key not in new_keys:
+                to_delete.append(existing_uid)
+        for existing_uid in to_delete:
+            existing_events.pop(existing_uid, None)
+
+    prune_cancelled(ipo_existing, ipo_new_keys)
+    prune_cancelled(spac_existing, spac_new_keys)
 
     ipo_merged = {**ipo_existing}
     ipo_merged.update(ipo_events_new)
