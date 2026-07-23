@@ -161,6 +161,18 @@ def has_value(v) -> bool:
         return bool(v)
 
 
+def is_valid_schedule_range(item, max_days: int = 3) -> bool:
+    """Return True only for a valid schedule shorter than four days (inclusive)."""
+    try:
+        start = datetime.strptime(item["BGNG_YMD"], "%Y-%m-%d").date()
+        end = datetime.strptime(item["END_YMD"], "%Y-%m-%d").date()
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    duration_days = (end - start).days + 1
+    return 1 <= duration_days <= max_days
+
+
 def clean_description_text(desc_text: str) -> str:
     # desc_text is the literal string from the ICS file (potentially escaped)
     unescaped = ics_unescape(desc_text)
@@ -426,6 +438,14 @@ def main():
         items = fetch_calendar(month_for_api, session)
 
         for item in items:
+            if not is_valid_schedule_range(item):
+                print(
+                    "⚠️ 비정상 일정 제외: "
+                    f"{item.get('ENT_NM', '이름 없음')} "
+                    f"({item.get('BGNG_YMD')}~{item.get('END_YMD')})"
+                )
+                continue
+
             uid = build_uid(item)
             event = build_event(item)
 
